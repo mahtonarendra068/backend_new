@@ -2,6 +2,7 @@ import order from "../model/orderModel.js";
 import Vendor from "../model/userModel.js";
 import nodemailer from "nodemailer";
 import generateInvoiceForOrder from "../utils/invoiceGenerator.js";
+import SibApiV3Sdk from 'sib-api-v3-sdk';
 
 const approvalneedUser = async (req, res) => {
 
@@ -38,8 +39,6 @@ export default approvalneedUser;
 
 
 
-import { sendBrevoEmail } from "../utils/brevoUtils.js";
-
 export const statusApproval = async (req, res) => {
     try {
         const vendorId = req.params.id;
@@ -47,55 +46,48 @@ export const statusApproval = async (req, res) => {
         const pendingVendor = await Vendor.findById(vendorId);
 
         if (!pendingVendor) {
-            return res.status(401).json({
-                message: "unauthorized ",
+            return res.status(404).json({
+                message: "Vendor not found",
                 success: false
             });
         }
 
+        // Status update karke save karein
         pendingVendor.approvalStatus = "Approved";
-
         await pendingVendor.save();
 
-        // Email is best-effort: approval is already saved.
-        // Brevo email failure must not undo vendor approval.
+        // Email sending (Best-effort: agar mail fail bhi ho toh approval cancel nahi hoga)
         try {
-            const info = await sendBrevoEmail({
-                to: pendingVendor.email,
-                toName: pendingVendor.contact_person_name,
-                subject: "Account Approved",
-                htmlContent: `
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                        <h2>Registration Approved</h2>
+            const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+            const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
 
-                        <p>
-                            Hello ${pendingVendor.contact_person_name},
-                        </p>
-
-                        <p>
-                            Your account has been approved by the admin.
-                        </p>
-
-                        <p>
-                            Your user ID is: ${pendingVendor.mobile_no}
-                        </p>
-
-                        <p>
-                            You can now log in to the application.
-                        </p>
-
-                        <p>
-                            Warm Regards,<br>
-                            Team: VS Arogya
-                        </p>
+            sendSmtpEmail.sender = {
+                email: process.env.SENDER_EMAIL,
+                name: process.env.SENDER_NAME,
+            };
+            sendSmtpEmail.to = [{ 
+                email: pendingVendor.email, 
+                name: pendingVendor.contact_person_name 
+            }];
+            sendSmtpEmail.subject = "Account Approved - VS Arogya";
+            sendSmtpEmail.htmlContent = `
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
+                    <h2>Registration Approved! 🎉</h2>
+                    <p>Hello <b>${pendingVendor.contact_person_name}</b>,</p>
+                    <p>Your vendor account for <b>${pendingVendor.store_name}</b> has been successfully approved by the admin.</p>
+                    
+                    <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <p style="margin: 0;"><b>Your Login ID / Mobile No:</b> ${pendingVendor.mobile_no}</p>
                     </div>
-                `,
-            });
 
-            console.log(
-                "Approval email sent via Brevo:",
-                info?.messageId
-            );
+                    <p>You can now log in to the application and start managing your store.</p>
+                    <br>
+                    <p>Warm Regards,<br><b>Team VS Arogya</b></p>
+                </div>
+            `;
+
+            const brevoResponse = await apiInstance.sendTransacEmail(sendSmtpEmail);
+            console.log("Approval email sent via Brevo:", brevoResponse?.messageId || brevoResponse);
 
         } catch (mailErr) {
             console.error(
@@ -105,20 +97,20 @@ export const statusApproval = async (req, res) => {
         }
 
         return res.status(200).json({
-            message: "approval sent success",
+            message: "Vendor approved successfully and notification sent.",
             success: true
         });
 
-    } catch (er) {
-        console.log(er);
+    } catch (error) {
+        console.error("Status Approval Error:", error);
 
         return res.status(500).json({
-            message: "Internal server error ",
-            success: false
+            message: "Internal server error",
+            success: false,
+            error: error.message
         });
     }
 };
-
 
 
 export const rejectApproval = async (req, res) => {

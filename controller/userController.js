@@ -4,11 +4,10 @@ import getDatauri from "../utils/datauri.js";
 import sharp from "sharp";
 import multer from "multer";
 import jwt from "jsonwebtoken";
-import nodmailer from "nodemailer";
-import { Resend } from "resend"
 
 
-import { sendBrevoEmail } from "../utils/brevoUtils.js";
+import SibApiV3Sdk from 'sib-api-v3-sdk';
+
 
 export const registerVendor = async (req, res) => {
   try {
@@ -26,7 +25,6 @@ export const registerVendor = async (req, res) => {
       gst_status,
       drug_lic_no,
       drug_lic_ex_date,
-      password,
     } = req.body;
 
     const gst_pdf = req.files?.gst_pdf?.[0];
@@ -84,7 +82,7 @@ export const registerVendor = async (req, res) => {
 
     // GST PDF Upload
     if (gst_pdf) {
-      const gstUri = getDatauri(gst_pdf);
+      const gstUri = getDatauri(gst_pdf); // Apne helper function ke hisab se
 
       gstUpload = await cloudinary.uploader.upload(gstUri, {
         folder: "vendors/gst",
@@ -92,11 +90,9 @@ export const registerVendor = async (req, res) => {
       });
     }
 
-    console.log("auto is :", gstUpload);
-
     // Drug License PDF Upload
     if (drug_lic_copy) {
-      const drugUri = getDatauri(drug_lic_copy);
+      const drugUri = getDatauri(drug_lic_copy); // Apne helper function ke hisab se
 
       drugUpload = await cloudinary.uploader.upload(drugUri, {
         folder: "vendors/drug-license",
@@ -104,10 +100,10 @@ export const registerVendor = async (req, res) => {
       });
     }
 
-    console.log("raw is:", drugUpload);
+    // Auto password generate karein
+    const autoPassword = Math.floor(1000 + Math.random() * 9000).toString();
 
-    const autoPassword = Math.floor(1000 + Math.random() * 9000);
-
+    // Database mein vendor save karein
     const vendor = await Vendor.create({
       vendor_type,
       shop_type,
@@ -142,51 +138,44 @@ export const registerVendor = async (req, res) => {
       },
     });
 
-    // Send registration email through shared Brevo utility
-    const info = await sendBrevoEmail({
-      to: email,
-      toName: contact_person_name,
-      subject: "Vendor Registration",
-      htmlContent: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h1>Hi ${contact_person_name}</h1>
+    // Send registration email via Brevo direct SDK
+    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
 
-          <p>🎉 Your vendor registration has been successfully received.</p>
-
-          <p>Your application is currently under review.</p>
-
-          <p>
-            We'll notify you via email once the verification process is complete.
-          </p>
-
-          <p>
-            Thank you for being part of our growing network 🚀🎉
-          </p>
-
-          <p>
-            Warm Regards,<br>
-            Team: VS Arogya
-          </p>
+    sendSmtpEmail.sender = {
+      email: process.env.SENDER_EMAIL,
+      name: process.env.SENDER_NAME,
+    };
+    sendSmtpEmail.to = [{ email: email, name: contact_person_name }];
+    sendSmtpEmail.subject = "Vendor Registration Successful - VS Arogya";
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
+        <h2>Hi ${contact_person_name},</h2>
+        <p>🎉 Your vendor registration for <b>${store_name}</b> has been successfully received.</p>
+        <p>Your application is currently under review.</p>
+        
+        <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 0;"><b>Your Temporary Login Credentials:</b></p>
+          <p style="margin: 5px 0 0 0;">Email: <b>${email}</b></p>
+          <p style="margin: 5px 0 0 0;">Password: <b style="color: #4F46E5;">${autoPassword}</b></p>
         </div>
-      `,
-    });
 
-    console.log("Brevo email response:", info);
+        <p>We'll notify you via email once the verification process is complete.</p>
+        <p>Thank you for being part of our growing network 🚀🎉</p>
+        <br>
+        <p>Warm Regards,<br><b>Team VS Arogya</b></p>
+      </div>
+    `;
 
-    if (!info?.messageId) {
-      return res.status(502).json({
-        success: false,
-        message:
-          "Registration saved, but email sending could not be confirmed.",
-      });
-    }
+    const brevoResponse = await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log("Brevo email response:", brevoResponse);
 
     return res.status(201).json({
       success: true,
-      message:
-        "Registration submitted. Approval status will be sent to your email.",
+      message: "Registration submitted successfully. Credentials & status sent to your email.",
       pdf_url: gstUpload?.secure_url,
     });
+
   } catch (error) {
     console.error(
       "Vendor Registration Error:",
