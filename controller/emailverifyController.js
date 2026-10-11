@@ -19,6 +19,8 @@ const STAFF_ROLES = ["admin", "marketing", "delivery", "agent", "outlet"];
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
 export const sendOtp = async (req, res) => {
+
+    console.log("send otp called " ) ;
     try {
         const email = normalizeEmail(req.body?.email);
 
