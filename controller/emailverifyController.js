@@ -1,292 +1,125 @@
 import Eotp from "../model/emailLoginModel.js";
-import jwt from "jsonwebtoken";
 import Vendor from "../model/userModel.js";
-import Outlet from "../model/outletregistersModel.js";
-import { sendBrevoEmail } from "../utils/brevoUtils.js";
+// import { BrevoClient } from "@getbrevo/brevo";
+import SibApiV3Sdk from 'sib-api-v3-sdk';
+import dotenv from 'dotenv';
 
-// How long a mailed code stays usable. Mongo's TTL index on the Eotp document
-// is the primary enforcement; this is the exact check so a code can't slip
-// through in the window before the TTL sweeper runs.
-const OTP_TTL_MS = 10 * 60 * 1000;
+dotenv.config();
 
-// A 6-digit code is only 1,000,000 possibilities — without a cap an attacker
-// could simply submit them all. After MAX_OTP_ATTEMPTS wrong tries the code is burned.
-const MAX_OTP_ATTEMPTS = 5;
+// Brevo Client Configuration
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
-const STAFF_ROLES = ["admin", "marketing", "delivery", "agent", "outlet"];
-
-const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+// In-memory storage (Production mein Redis ya Database use karein)
+export const otpStorage = {};
 
 export const sendOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
 
-    console.log("send otp called " ) ;
-    try {
-        const {email} = req.body
+    console.log("email is", email ) ;
 
-        console.log("email is ", email)
 
-        if (!email) {
-            return res.status(400).json({
-                success: false,
-                message: "Email required",
-            });
-        }
 
-        // Check vendor and outlet
-        // const [vendor, outlet] = await Promise.all([
-        //     Vendor.findOne({ email }).select("_id"),
-        //     Outlet.findOne({ email }).select("_id"),
-        // ]);
-
-        // Avoid account enumeration
-        // if (!vendor && !outlet) {
-        //     return res.status(200).json({
-        //         success: true,
-        //         message: "OTP sent in given email.",
-        //     });
-        // }
-
-        // Generate six-digit OTP
-        const generatedOtp = Math.floor(
-            100000 + Math.random() * 900000
-        ).toString();
-
-        // Delete previous OTP
-        await Eotp.deleteMany({ email });
-
-        // Save new OTP
-        await Eotp.create({
-            email,
-            otp: generatedOtp,
-        });
-
-        // Send OTP email using shared Brevo utility
-        await sendBrevoEmail({
-
-        
-
-            to: email,
-            subject: "Login OTP - VS Arogya",
-            htmlContent: `
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Email Verification</h2>
-
-                    <p>Your verification OTP is:</p>
-
-                    <h1 style="letter-spacing: 5px;">
-                        ${generatedOtp}
-                    </h1>
-
-                    <p>Your OTP will expire in 10 minutes.</p>
-
-                    <p>
-                        If you did not request this OTP, please ignore this email.
-                    </p>
-                </div>
-            `,
-
-        });
-
-        return res.status(200).json({
-            success: true,
-            message: "OTP sent in given email.",
-        });
-
-    } catch (error) {
-        console.error(
-            "Send OTP Error:",
-            error?.statusCode,
-            error?.body || error?.message
-        );
-
-        return res.status(500).json({
-            success: false,
-            message: "Unable to send OTP. Please try again.",
-        });
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email address is required.' });
     }
+
+    // 1. 6-digit random OTP generate karein
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 2. OTP temporarily store karein (Expiry: 5 minutes)
+    otpStorage[email] = {
+      otp: otp,
+      expiresAt: Date.now() + 5 * 60 * 1000 
+    };
+
+    // 3. Email parameters setup karein
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    sendSmtpEmail.sender = { 
+      email: process.env.SENDER_EMAIL, 
+      name: process.env.SENDER_NAME 
+    };
+    sendSmtpEmail.to = [{ email: email }];
+    sendSmtpEmail.subject = 'Your Verification OTP Code -VS Arogya';
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Email Verification</h2>
+        <p>Your One-Time Password (OTP) for verification is:</p>
+        <h1 style="color: #4F46E5; letter-spacing: 2px;">${otp}</h1>
+        <p>This OTP is valid for 5 minutes. Do not share it with anyone.</p>
+      </div>
+    `;
+
+    // 4. Brevo API ke through email bhejein
+    await apiInstance.sendTransacEmail(sendSmtpEmail);
+
+    return res.status(200).json({
+      success: true,
+      message: 'OTP sent successfully to your email.'
+    });
+
+  } catch (error) {
+    console.error('Error sending email via Brevo:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send OTP. Please try again later.',
+      error: error.message
+    });
+  }
 };
-
-
-/**
- * POST /vsArogya/eotp-verify   { email, otp }
- *
- * Verifies the code and signs the account in.
- *
- * The reply deliberately mirrors POST /vsArogya/login and POST
- * /vsArogya/outlet-login field for field — `token`, `role`, `id`, `name`,
- * `pincode` (plus `outlet` for an outlet account). The app feeds the body of
- * whichever login it used into the same session/role routing, so any drift here
- * would silently break OTP sign-in for some roles.
- */
+// import Eotp from '../models/eotpModel.js';
+// import Vendor from '../models/vendorModel.js';
 
 export const verifyOtpAndLogin = async (req, res) => {
     try {
-        const email = normalizeEmail(req.body?.email);
-        const otp = String(req.body?.otp || "").trim();
+        const { email, otp } = req.body;
 
         if (!email || !otp) {
-            return res.status(400).json({
-                success: false,
-                message: "Missing field",
-            });
+            return res.status(400).json({ success: false, message: 'Missing fields' });
         }
 
-        // Find the latest OTP generated by sendOtp
-        const otpRecord = await Eotp.findOne({ email })
-            .sort({ createdAt: -1 });
+        // Database me OTP check karein
+        const otpRecord = await Eotp.findOne({ email, otp });
 
         if (!otpRecord) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid OTP",
-            });
+            return res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
 
-        // Validate expiry (10 minutes, using the existing constant)
-        if (
-            Date.now() - new Date(otpRecord.createdAt).getTime()
-            > OTP_TTL_MS
-        ) {
+        // Optional Expiry Check (Agar aapne schema me TTL index nahi lagaya hai)
+        const isExpired = Date.now() - new Date(otpRecord.createdAt).getTime() > 5 * 60 * 1000;
+        if (isExpired) {
             await Eotp.deleteOne({ _id: otpRecord._id });
-
-            return res.status(400).json({
-                success: false,
-                message: "This OTP has expired. Please request a new one.",
-            });
+            return res.status(400).json({ success: false, message: 'OTP has expired' });
         }
 
-        // Enforce maximum incorrect attempts
-        if (otpRecord.attempts >= MAX_OTP_ATTEMPTS) {
-            await Eotp.deleteOne({ _id: otpRecord._id });
-
-            return res.status(429).json({
-                success: false,
-                message: "Too many incorrect attempts. Please request a new OTP.",
-            });
-        }
-
-        // Compare submitted OTP
-        if (otpRecord.otp !== otp) {
-            await Eotp.updateOne(
-                { _id: otpRecord._id },
-                { $inc: { attempts: 1 } }
-            );
-
-            return res.status(400).json({
-                success: false,
-                message: "Invalid OTP",
-            });
-        }
-
-        // OTP is single-use
+        // Verification ke baad OTP ko immediately delete kar dein
         await Eotp.deleteOne({ _id: otpRecord._id });
 
-        // Check outlet account first
-        const outlet = await Outlet.findOne({ email });
-
-        if (outlet) {
-            const token = jwt.sign(
-                { id: outlet._id, role: "outlet" },
-                process.env.SECRET_KEY,
-                { expiresIn: "7d" }
-            );
-
-            res.cookie("token", token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === "production",
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-                sameSite: "strict",
-            });
-
-            const { password: _pw, ...safeOutlet } =
-                outlet.toObject();
-
-            return res.status(200).json({
-                message: "Login success",
-                success: true,
-                role: "outlet",
-                token,
-                id: outlet._id,
-                name: outlet.outletName,
-                pincode: outlet.pincode,
-                outlet: safeOutlet,
-            });
-        }
-
-        // Check vendor and staff accounts
-        const user = await Vendor.findOne({ email });
+        // Check karein user DB me pehle se hai ya naya hai
+        let user = await Vendor.findOne({ email });
 
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "No account found for this email. Please register first.",
-            });
+            user = await Vendor.create({ email });
+        } else {
+            user.lastLogin = Date.now();
+            await user.save();
         }
-
-        // Keep the existing approval policy
-        const role = String(user.role || "").toLowerCase();
-
-        if (
-            !STAFF_ROLES.includes(role) &&
-            user.approvalStatus !== "Approved"
-        ) {
-            const msg = user.approvalStatus === "Rejected"
-                ? "Your registration was rejected. Please contact support."
-                : "Your account is pending admin approval. You'll get your login details by email once approved.";
-
-            return res.status(403).json({
-                success: false,
-                message: msg,
-            });
-        }
-
-        // Update last login
-        await Vendor.updateOne(
-            { _id: user._id },
-            { $set: { lastLogin: new Date() } }
-        );
-
-        // Generate vendor JWT
-        const token = jwt.sign(
-            {
-                id: user._id,
-                role: user.role || "vendor",
-            },
-            process.env.SECRET_KEY,
-            { expiresIn: "1d" }
-        );
-
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            maxAge: 24 * 60 * 60 * 1000,
-            sameSite: "strict",
-        });
 
         return res.status(200).json({
-            message: "Login success",
             success: true,
-            role: user.role,
-            token,
-            id: user._id,
-            pincode: user.pin_code,
-            name: user.contact_person_name || user.store_name,
-            email: user.email,
-            approvalStatus: user.approvalStatus,
-            vendor_type: user.vendor_type,
-            shop_type: user.shop_type,
+            message: 'Login successful!',
+            user: {
+                id: user._id,
+                email: user.email,
+                lastLogin: user.lastLogin,
+            },
         });
-
     } catch (error) {
-        console.error(
-            "Verify OTP Error:",
-            error?.response?.body || error.message
-        );
-
-        return res.status(500).json({
-            success: false,
-            message: "Server error, login failed",
-        });
+        console.error('Verify OTP Error:', error);
+        return res.status(500).json({ success: false, message: 'Server error, login failed' });
     }
 };
