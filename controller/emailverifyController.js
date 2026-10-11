@@ -34,18 +34,18 @@ export const sendOtp = async (req, res) => {
         }
 
         // Check vendor and outlet
-        const [vendor, outlet] = await Promise.all([
-            Vendor.findOne({ email }).select("_id"),
-            Outlet.findOne({ email }).select("_id"),
-        ]);
+        // const [vendor, outlet] = await Promise.all([
+        //     Vendor.findOne({ email }).select("_id"),
+        //     Outlet.findOne({ email }).select("_id"),
+        // ]);
 
         // Avoid account enumeration
-        if (!vendor && !outlet) {
-            return res.status(200).json({
-                success: true,
-                message: "OTP sent in given email.",
-            });
-        }
+        // if (!vendor && !outlet) {
+        //     return res.status(200).json({
+        //         success: true,
+        //         message: "OTP sent in given email.",
+        //     });
+        // }
 
         // Generate six-digit OTP
         const generatedOtp = Math.floor(
