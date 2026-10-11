@@ -17,16 +17,9 @@ const STAFF_ROLES = ["admin", "marketing", "delivery", "agent", "outlet"];
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
-import * as brevo from "@getbrevo/brevo";
 
-// Initialize Brevo API
-const brevoApi = new brevo.TransactionalEmailsApi();
 
-brevoApi.setApiKey(
-    brevo.TransactionalEmailsApiApiKeys.apiKey,
-    process.env.BREVO_API_KEY
-);
-
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 export const sendOtp = async (req, res) => {
     try {
         const email = normalizeEmail(req.body?.email);
@@ -66,32 +59,28 @@ export const sendOtp = async (req, res) => {
             otp: generatedOtp,
         });
 
-        // Prepare email using Brevo
-        const sendSmtpEmail = new brevo.SendSmtpEmail();
+        // Send OTP email using shared Brevo utility
+        await sendBrevoEmail({
+            to: email,
+            subject: "Login OTP - VS Arogya",
+            htmlContent: `
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Email Verification</h2>
 
-        sendSmtpEmail.sender = {
-            name: process.env.BREVO_SENDER_NAME,
-            email: process.env.BREVO_SENDER_EMAIL,
-        };
+                    <p>Your verification OTP is:</p>
 
-        sendSmtpEmail.to = [{ email }];
+                    <h1 style="letter-spacing: 5px;">
+                        ${generatedOtp}
+                    </h1>
 
-        sendSmtpEmail.subject = "Login OTP - VS Arogya";
+                    <p>Your OTP will expire in 10 minutes.</p>
 
-        sendSmtpEmail.htmlContent = `
-            <div style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2>Email Verification</h2>
-                <p>Your verification OTP is:</p>
-                <h1 style="letter-spacing: 5px;">
-                    ${generatedOtp}
-                </h1>
-                <p>Your OTP will expire in 10 minutes.</p>
-                <p>If you did not request this OTP, please ignore this email.</p>
-            </div>
-        `;
-
-        // Send email through Brevo API
-        await brevoApi.sendTransacEmail(sendSmtpEmail);
+                    <p>
+                        If you did not request this OTP, please ignore this email.
+                    </p>
+                </div>
+            `,
+        });
 
         return res.status(200).json({
             success: true,
@@ -110,6 +99,7 @@ export const sendOtp = async (req, res) => {
         });
     }
 };
+
 
 /**
  * POST /vsArogya/eotp-verify   { email, otp }

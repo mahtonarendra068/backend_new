@@ -37,6 +37,9 @@ export default approvalneedUser;
 
 
 
+
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
+
 export const statusApproval = async (req, res) => {
     try {
         const vendorId = req.params.id;
@@ -57,50 +60,42 @@ export const statusApproval = async (req, res) => {
         // Email is best-effort: approval is already saved.
         // Brevo email failure must not undo vendor approval.
         try {
-            const sendSmtpEmail = new brevo.SendSmtpEmail();
+            const info = await sendBrevoEmail({
+                to: pendingVendor.email,
+                toName: pendingVendor.contact_person_name,
+                subject: "Account Approved",
+                htmlContent: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                        <h2>Registration Approved</h2>
 
-            sendSmtpEmail.sender = {
-                name: process.env.BREVO_SENDER_NAME || "VS Arogya",
-                email: process.env.BREVO_SENDER_EMAIL
-            };
+                        <p>
+                            Hello ${pendingVendor.contact_person_name},
+                        </p>
 
-            sendSmtpEmail.to = [
-                {
-                    email: pendingVendor.email,
-                    name: pendingVendor.contact_person_name
-                }
-            ];
+                        <p>
+                            Your account has been approved by the admin.
+                        </p>
 
-            sendSmtpEmail.subject = "Account Approved";
+                        <p>
+                            Your user ID is: ${pendingVendor.mobile_no}
+                        </p>
 
-            sendSmtpEmail.htmlContent = `
-                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                    <h2>Registration Approved</h2>
+                        <p>
+                            You can now log in to the application.
+                        </p>
 
-                    <p>Hello ${pendingVendor.contact_person_name},</p>
+                        <p>
+                            Warm Regards,<br>
+                            Team: VS Arogya
+                        </p>
+                    </div>
+                `,
+            });
 
-                    <p>
-                        Your account has been approved by the admin.
-                    </p>
-
-                    <p>
-                        Your user ID is: ${pendingVendor.mobile_no}
-                    </p>
-
-                    <p>
-                        You can now log in to the application.
-                    </p>
-
-                    <p>
-                        Warm Regards,<br>
-                        Team: VS Arogya
-                    </p>
-                </div>
-            `;
-
-            const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
-
-            console.log("Approval email sent via Brevo:", info.messageId);
+            console.log(
+                "Approval email sent via Brevo:",
+                info?.messageId
+            );
 
         } catch (mailErr) {
             console.error(

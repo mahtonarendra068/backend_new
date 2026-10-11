@@ -8,20 +8,9 @@ import nodmailer from "nodemailer";
 import { Resend } from "resend"
 
 
-
-import * as brevo from "@getbrevo/brevo";
-
-// Brevo API setup
-const brevoApi = new brevo.TransactionalEmailsApi();
-
-brevoApi.setApiKey(
-  brevo.TransactionalEmailsApiApiKeys.apiKey,
-  process.env.BREVO_API_KEY
-);
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 
 export const registerVendor = async (req, res) => {
-  // console.log("register controller hited ");
-
   try {
     const {
       vendor_type,
@@ -117,7 +106,7 @@ export const registerVendor = async (req, res) => {
 
     console.log("raw is:", drugUpload);
 
-    let autoPassword = Math.floor(1000 + Math.random() * 9000);
+    const autoPassword = Math.floor(1000 + Math.random() * 9000);
 
     const vendor = await Vendor.create({
       vendor_type,
@@ -153,56 +142,42 @@ export const registerVendor = async (req, res) => {
       },
     });
 
-    // Send registration email using Brevo API
-    const sendSmtpEmail = new brevo.SendSmtpEmail();
+    // Send registration email through shared Brevo utility
+    const info = await sendBrevoEmail({
+      to: email,
+      toName: contact_person_name,
+      subject: "Vendor Registration",
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+          <h1>Hi ${contact_person_name}</h1>
 
-    sendSmtpEmail.sender = {
-      name: process.env.BREVO_SENDER_NAME || "VS Arogya",
-      email: process.env.BREVO_SENDER_EMAIL,
-    };
+          <p>🎉 Your vendor registration has been successfully received.</p>
 
-    sendSmtpEmail.to = [
-      {
-        email,
-        name: contact_person_name,
-      },
-    ];
+          <p>Your application is currently under review.</p>
 
-    sendSmtpEmail.subject = "Vendor Registration";
+          <p>
+            We'll notify you via email once the verification process is complete.
+          </p>
 
-    sendSmtpEmail.htmlContent = `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-        <h1>Hi ${contact_person_name}</h1>
+          <p>
+            Thank you for being part of our growing network 🚀🎉
+          </p>
 
-        <p>🎉 Your vendor registration has been successfully received.</p>
-
-        <p>Your application is currently under review.</p>
-
-        <p>
-          We'll notify you via email once the verification process is complete.
-        </p>
-
-        <p>
-          Thank you for being part of our growing network 🚀🎉
-        </p>
-
-        <p>
-          Warm Regards,<br>
-          Team: VS Arogya
-        </p>
-      </div>
-    `;
-
-    const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
+          <p>
+            Warm Regards,<br>
+            Team: VS Arogya
+          </p>
+        </div>
+      `,
+    });
 
     console.log("Brevo email response:", info);
 
-    // Brevo API success means the email was accepted for processing,
-    // not necessarily delivered to the recipient's inbox.
-    if (!info || !info.messageId) {
+    if (!info?.messageId) {
       return res.status(502).json({
         success: false,
-        message: "Registration saved, but email sending could not be confirmed.",
+        message:
+          "Registration saved, but email sending could not be confirmed.",
       });
     }
 
@@ -224,6 +199,7 @@ export const registerVendor = async (req, res) => {
     });
   }
 };
+
 
 export const login = async (req, res) => {
 
