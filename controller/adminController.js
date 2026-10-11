@@ -2,7 +2,7 @@ import order from "../model/orderModel.js";
 import Vendor from "../model/userModel.js";
 import nodemailer from "nodemailer";
 import generateInvoiceForOrder from "../utils/invoiceGenerator.js";
-import SibApiV3Sdk from 'sib-api-v3-sdk';
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 
 const approvalneedUser = async (req, res) => {
 
@@ -58,19 +58,11 @@ export const statusApproval = async (req, res) => {
 
         // Email sending (Best-effort: agar mail fail bhi ho toh approval cancel nahi hoga)
         try {
-            const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-            const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-            sendSmtpEmail.sender = {
-                email: process.env.SENDER_EMAIL,
-                name: process.env.SENDER_NAME,
-            };
-            sendSmtpEmail.to = [{ 
-                email: pendingVendor.email, 
-                name: pendingVendor.contact_person_name 
-            }];
-            sendSmtpEmail.subject = "Account Approved - VS Arogya";
-            sendSmtpEmail.htmlContent = `
+            const brevoResponse = await sendBrevoEmail({
+      to: pendingVendor.email,
+      toName: pendingVendor.contact_person_name,
+      subject: "Account Approved - VS Arogya",
+      htmlContent: `
                 <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
                     <h2>Registration Approved! 🎉</h2>
                     <p>Hello <b>${pendingVendor.contact_person_name}</b>,</p>
@@ -84,9 +76,8 @@ export const statusApproval = async (req, res) => {
                     <br>
                     <p>Warm Regards,<br><b>Team VS Arogya</b></p>
                 </div>
-            `;
-
-            const brevoResponse = await apiInstance.sendTransacEmail(sendSmtpEmail);
+            `,
+    });
             console.log("Approval email sent via Brevo:", brevoResponse?.messageId || brevoResponse);
 
         } catch (mailErr) {

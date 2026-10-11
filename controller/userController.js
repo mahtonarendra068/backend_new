@@ -6,7 +6,7 @@ import multer from "multer";
 import jwt from "jsonwebtoken";
 
 
-import SibApiV3Sdk from 'sib-api-v3-sdk';
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 
 
 export const registerVendor = async (req, res) => {
@@ -139,16 +139,11 @@ export const registerVendor = async (req, res) => {
     });
 
     // Send registration email via Brevo direct SDK
-    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-    sendSmtpEmail.sender = {
-      email: process.env.SENDER_EMAIL,
-      name: process.env.SENDER_NAME,
-    };
-    sendSmtpEmail.to = [{ email: email, name: contact_person_name }];
-    sendSmtpEmail.subject = "Vendor Registration Successful - VS Arogya";
-    sendSmtpEmail.htmlContent = `
+    const brevoResponse = await sendBrevoEmail({
+      to: email,
+      toName: contact_person_name,
+      subject: "Vendor Registration Successful - VS Arogya",
+      htmlContent: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
         <h2>Hi ${contact_person_name},</h2>
         <p>🎉 Your vendor registration for <b>${store_name}</b> has been successfully received.</p>
@@ -165,9 +160,8 @@ export const registerVendor = async (req, res) => {
         <br>
         <p>Warm Regards,<br><b>Team VS Arogya</b></p>
       </div>
-    `;
-
-    const brevoResponse = await apiInstance.sendTransacEmail(sendSmtpEmail);
+    `,
+    });
     console.log("Brevo email response:", brevoResponse);
 
     return res.status(201).json({

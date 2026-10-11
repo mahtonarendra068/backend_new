@@ -23,6 +23,16 @@ const isAuthenticated = async (req, res, next) => {
             process.env.SECRET_KEY
         );
 
+        // An email-OTP guest (no registered + approved account) may browse the
+        // public catalogue only. Its token has no account id, so nothing behind
+        // a login — cart, orders, payment, profile — is open to it.
+        if (decode.role === "guest") {
+            return res.status(403).json({
+                success: false,
+                message: "Please register as a vendor and get approved to continue."
+            });
+        }
+
         // login() signs { userId }, outlet_login() signs { outletId } — neither
         // signs `id`, so reading decode.id alone leaves req.id undefined and
         // breaks every route that scopes by it (cart, orders, payment, invoice).
