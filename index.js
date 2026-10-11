@@ -83,9 +83,14 @@ app.use('/vsArogya' , eotpRouter);
 // Mounted on its own prefix because Meta owns the path shape.
 app.use("/vsArogya/whatsapp", whatsappRoute);
 
-app.get('/', (req, res) => {
-    res.send("<h1> This is from server side </h1>");
-})
+
+app.get("/", (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: "VS Arogya Backend is running 🚀",
+    });
+});
+
 
 app.listen(port, () => {
     connectDb();

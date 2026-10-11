@@ -22,7 +22,9 @@ export const sendOtp = async (req, res) => {
 
     console.log("send otp called " ) ;
     try {
-        const email = normalizeEmail(req.body?.email);
+        const {email} = req.body
+
+        console.log("email is ", email)
 
         if (!email) {
             return res.status(400).json({
