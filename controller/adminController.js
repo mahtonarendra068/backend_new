@@ -140,49 +140,36 @@ export const rejectApproval = async (req, res) => {
         // Best-effort email using Brevo API
         // Rejection is already saved, so email failure is non-fatal.
         try {
-            const sendSmtpEmail = new brevo.SendSmtpEmail();
+            const info = await sendBrevoEmail({
+                to: vendor.email,
+                toName: vendor.contact_person_name,
+                subject: "Account Rejected",
+                htmlContent: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                        <h2>Registration Rejected</h2>
 
-            sendSmtpEmail.sender = {
-                name: process.env.BREVO_SENDER_NAME || "VS Arogya",
-                email: process.env.BREVO_SENDER_EMAIL
-            };
+                        <p>Hello ${vendor.contact_person_name},</p>
 
-            sendSmtpEmail.to = [
-                {
-                    email: vendor.email,
-                    name: vendor.contact_person_name
-                }
-            ];
+                        <p>
+                            Your account has been rejected by the admin.
+                        </p>
 
-            sendSmtpEmail.subject = "Account Rejected";
+                        <p>
+                            If you have questions regarding this decision,
+                            please contact our support team.
+                        </p>
 
-            sendSmtpEmail.htmlContent = `
-                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                    <h2>Registration Rejected</h2>
-
-                    <p>Hello ${vendor.contact_person_name},</p>
-
-                    <p>
-                        Your account has been rejected by the admin.
-                    </p>
-
-                    <p>
-                        If you have questions regarding this decision,
-                        please contact our support team.
-                    </p>
-
-                    <p>
-                        Warm Regards,<br>
-                        Team: VS Arogya
-                    </p>
-                </div>
-            `;
-
-            const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
+                        <p>
+                            Warm Regards,<br>
+                            Team: VS Arogya
+                        </p>
+                    </div>
+                `,
+            });
 
             console.log(
                 "Rejection email sent via Brevo:",
-                info.messageId
+                info?.messageId
             );
 
         } catch (mailErr) {

@@ -2,6 +2,7 @@ import Eotp from "../model/emailLoginModel.js";
 import jwt from "jsonwebtoken";
 import Vendor from "../model/userModel.js";
 import Outlet from "../model/outletregistersModel.js";
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 
 // How long a mailed code stays usable. Mongo's TTL index on the Eotp document
 // is the primary enforcement; this is the exact check so a code can't slip
@@ -9,7 +10,7 @@ import Outlet from "../model/outletregistersModel.js";
 const OTP_TTL_MS = 10 * 60 * 1000;
 
 // A 6-digit code is only 1,000,000 possibilities — without a cap an attacker
-// could simply submit them all. Three strikes and the code is burned.
+// could simply submit them all. After MAX_OTP_ATTEMPTS wrong tries the code is burned.
 const MAX_OTP_ATTEMPTS = 5;
 
 
@@ -17,9 +18,6 @@ const STAFF_ROLES = ["admin", "marketing", "delivery", "agent", "outlet"];
 
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 
-
-
-import { sendBrevoEmail } from "../utils/brevoUtils.js";
 export const sendOtp = async (req, res) => {
     try {
         const email = normalizeEmail(req.body?.email);
@@ -90,7 +88,8 @@ export const sendOtp = async (req, res) => {
     } catch (error) {
         console.error(
             "Send OTP Error:",
-            error?.response?.body || error.message
+            error?.statusCode,
+            error?.body || error?.message
         );
 
         return res.status(500).json({
