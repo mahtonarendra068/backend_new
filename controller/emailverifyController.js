@@ -16,13 +16,12 @@ const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 // In-memory storage (Production mein Redis ya Database use karein)
 export const otpStorage = {};
 
+
 export const sendOtp = async (req, res) => {
   try {
     const { email } = req.body;
 
-    console.log("email is", email ) ;
-
-
+    console.log("email is", email);
 
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email address is required.' });
@@ -30,15 +29,20 @@ export const sendOtp = async (req, res) => {
 
     // 1. 6-digit random OTP generate karein
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
-    // 2. OTP temporarily store karein (Expiry: 5 minutes)
-    otpStorage[email] = {
-      otp: otp,
-      expiresAt: Date.now() + 5 * 60 * 1000 
-    };
+    // 2. Database me email aur OTP save (ya update) karein
+    // Agar pehle se email hoga toh naya OTP overwrite ho jayega, nahi toh naya row ban jayega.
+    await Eotp.findOneAndUpdate(
+      { email },
+      { otp, expiresAt },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     // 3. Email parameters setup karein
+    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    
     sendSmtpEmail.sender = { 
       email: process.env.SENDER_EMAIL, 
       name: process.env.SENDER_NAME 
@@ -59,7 +63,7 @@ export const sendOtp = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'OTP sent successfully to your email.'
+      message: 'OTP sent successfully to your email and saved in DB.'
     });
 
   } catch (error) {
