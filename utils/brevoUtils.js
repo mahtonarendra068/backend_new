@@ -28,6 +28,9 @@ export const sendBrevoEmail = async ({
 }) => {
     const senderEmail = process.env.BREVO_SENDER_EMAIL;
 
+                console.log("brevo called  utils") ;
+
+
     if (!senderEmail) {
         throw new Error("BREVO_SENDER_EMAIL is missing from environment variables");
     }

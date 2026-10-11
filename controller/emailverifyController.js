@@ -63,6 +63,9 @@ export const sendOtp = async (req, res) => {
 
         // Send OTP email using shared Brevo utility
         await sendBrevoEmail({
+
+        
+
             to: email,
             subject: "Login OTP - VS Arogya",
             htmlContent: `
@@ -82,6 +85,7 @@ export const sendOtp = async (req, res) => {
                     </p>
                 </div>
             `,
+
         });
 
         return res.status(200).json({
