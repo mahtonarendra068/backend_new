@@ -8,10 +8,20 @@ import nodmailer from "nodemailer";
 import { Resend } from "resend"
 
 
+
+import * as brevo from "@getbrevo/brevo";
+
+// Brevo API setup
+const brevoApi = new brevo.TransactionalEmailsApi();
+
+brevoApi.setApiKey(
+  brevo.TransactionalEmailsApiApiKeys.apiKey,
+  process.env.BREVO_API_KEY
+);
+
 export const registerVendor = async (req, res) => {
+  // console.log("register controller hited ");
 
-
-  console.log("register controller hited ");
   try {
     const {
       vendor_type,
@@ -34,13 +44,20 @@ export const registerVendor = async (req, res) => {
     const store_pic = req.files?.store_pic?.[0];
     const drug_lic_copy = req.files?.drug_lic_copy?.[0];
 
-
-    if (!store_name || !mobile_no || !email || !vendor_type || !shop_type || !store_name ||
-
-      !contact_person_name || !mobile_no ||
-      !email || !full_address || !city || !state || !pin_code
-      || !gst_status || !drug_lic_ex_date || !drug_lic_no
-
+    if (
+      !store_name ||
+      !mobile_no ||
+      !email ||
+      !vendor_type ||
+      !shop_type ||
+      !contact_person_name ||
+      !full_address ||
+      !city ||
+      !state ||
+      !pin_code ||
+      !gst_status ||
+      !drug_lic_ex_date ||
+      !drug_lic_no
     ) {
       return res.status(400).json({
         success: false,
@@ -80,16 +97,13 @@ export const registerVendor = async (req, res) => {
     if (gst_pdf) {
       const gstUri = getDatauri(gst_pdf);
 
-
       gstUpload = await cloudinary.uploader.upload(gstUri, {
         folder: "vendors/gst",
-        resource_type: "auto",   // ✅ Use "raw" for PDFs, not "auto"
-        // use_filename: true,
-        // unique_filename: true,  // ✅ Avoid filename conflicts
+        resource_type: "auto",
       });
     }
 
-    console.log("auto is :", gstUpload)
+    console.log("auto is :", gstUpload);
 
     // Drug License PDF Upload
     if (drug_lic_copy) {
@@ -97,17 +111,13 @@ export const registerVendor = async (req, res) => {
 
       drugUpload = await cloudinary.uploader.upload(drugUri, {
         folder: "vendors/drug-license",
-        resource_type: "auto",   // ✅ Same here
-        // use_filename: true,
-        // unique_filename: true,
+        resource_type: "auto",
       });
     }
 
     console.log("raw is:", drugUpload);
 
     let autoPassword = Math.floor(1000 + Math.random() * 9000);
-    // Not logged — it is the vendor's actual login password, and it is already
-    // delivered to them by email below.
 
     const vendor = await Vendor.create({
       vendor_type,
@@ -131,101 +141,82 @@ export const registerVendor = async (req, res) => {
       },
 
       gst_pdf: {
-        url: gstUpload.secure_url,
-        publicId: gstUpload.public_id,
-        fileName: gst_pdf.originalname,
+        url: gstUpload?.secure_url,
+        publicId: gstUpload?.public_id,
+        fileName: gst_pdf?.originalname,
       },
 
       drug_lic_copy: {
-        url: drugUpload.secure_url,
-        publicId: drugUpload.public_id,
-        fileName: drug_lic_copy.originalname
-      }
+        url: drugUpload?.secure_url,
+        publicId: drugUpload?.public_id,
+        fileName: drug_lic_copy?.originalname,
+      },
     });
 
+    // Send registration email using Brevo API
+    const sendSmtpEmail = new brevo.SendSmtpEmail();
 
+    sendSmtpEmail.sender = {
+      name: process.env.BREVO_SENDER_NAME || "VS Arogya",
+      email: process.env.BREVO_SENDER_EMAIL,
+    };
 
-    const transporter = nodmailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL,
-        pass: process.env.E_PASS
-      }
-    });
+    sendSmtpEmail.to = [
+      {
+        email,
+        name: contact_person_name,
+      },
+    ];
 
-    const info = await transporter.sendMail({
-      from: process.env.EMAIL,
-      to: email,
-      subject: "Vendor Registration",
-      html: `
+    sendSmtpEmail.subject = "Vendor Registration";
 
-        <h1>Hi ${contact_person_name} </h1>
-      <p>🎉 Your vendor registration has been successfully received.</p>
-      <p>Your application is currently under review.</p>
-      <p>We'll notify you via email once the verification process is complete.</p>
-      <p>Thank you for being part of our growing network🚀. 🎉 </p>
-       <p>Warm Regards,<br>
-       Team:VS Arogya </p>
+    sendSmtpEmail.htmlContent = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <h1>Hi ${contact_person_name}</h1>
 
-      `
-    });
+        <p>🎉 Your vendor registration has been successfully received.</p>
 
-    //   console.log(" resend api is " , process.env.RESEND_API_KEY ) ;
+        <p>Your application is currently under review.</p>
 
-    //   const resend = new Resend(process.env.RESEND_API_KEY);
+        <p>
+          We'll notify you via email once the verification process is complete.
+        </p>
 
+        <p>
+          Thank you for being part of our growing network 🚀🎉
+        </p>
 
-    //   const { data, error } = await resend.emails.send({
-    //   from: process.env.RESEND_FROM_EMAIL ,
-    //     to: [email],
-    //     subject: "Vendor Registration",
-    //     html: `
-    //   <h1>Hi ${contact_person_name}</h1>
+        <p>
+          Warm Regards,<br>
+          Team: VS Arogya
+        </p>
+      </div>
+    `;
 
-    //   <p>🎉 Your vendor registration has been successfully received.</p>
+    const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
 
-    //   <p>Your application is currently under review.</p>
+    console.log("Brevo email response:", info);
 
-    //   <p>
-    //     We'll notify you via email once the verification process
-    //     is complete.
-    //   </p>
-
-    //   <p>
-    //     Thank you for being part of our growing network 🚀🎉
-    //   </p>
-
-    //   <p>
-    //     Warm Regards,<br>
-    //     Team: VS Arogya
-    //   </p>
-    // `
-    //   });
-
-    //   if (error) {
-    //     console.error("Resend email error:", error);
-    //   } else {
-    //     console.log("Email sent successfully:", data);
-    //   }
-
-
-    console.log("email info is :", info);
-
-
-    if (info.accepted.length < 0) {
-      return res.status(404)
-        .json({
-          message: "Email not sent ", success: false
-        });
+    // Brevo API success means the email was accepted for processing,
+    // not necessarily delivered to the recipient's inbox.
+    if (!info || !info.messageId) {
+      return res.status(502).json({
+        success: false,
+        message: "Registration saved, but email sending could not be confirmed.",
+      });
     }
 
     return res.status(201).json({
       success: true,
-      message: "Registration submitted. Approval status will be sent to your email.",
-      pdf_url: gstUpload.secure_url
+      message:
+        "Registration submitted. Approval status will be sent to your email.",
+      pdf_url: gstUpload?.secure_url,
     });
   } catch (error) {
-    console.log(error);
+    console.error(
+      "Vendor Registration Error:",
+      error?.response?.body || error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -302,7 +293,7 @@ export const login = async (req, res) => {
 
 
       httpOnly: true,
-      maxAge: 1 * 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       sameSite: "strict"
 
     });

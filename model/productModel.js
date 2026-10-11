@@ -113,3 +113,7 @@ productSchema.set("toObject", { virtuals: true });
 const product = mongoose.model('product' , productSchema ) ;
 
 export default product ;
+
+
+
+// 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

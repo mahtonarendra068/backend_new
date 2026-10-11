@@ -36,125 +36,182 @@ const approvalneedUser = async (req, res) => {
 export default approvalneedUser;
 
 
+
 export const statusApproval = async (req, res) => {
-
     try {
-
         const vendorId = req.params.id;
 
         const pendingVendor = await Vendor.findById(vendorId);
 
         if (!pendingVendor) {
-            return res.status(401)
-                .json({
-                    message: "unauthorized ",
-                    success: false
-                });
+            return res.status(401).json({
+                message: "unauthorized ",
+                success: false
+            });
         }
 
         pendingVendor.approvalStatus = "Approved";
 
         await pendingVendor.save();
 
-        // Email is best-effort: the vendor IS approved at this point, so a mail
-        // failure (bad SMTP env, network) must not turn the approval into an
-        // error — the admin would retry an already-approved vendor.
+        // Email is best-effort: approval is already saved.
+        // Brevo email failure must not undo vendor approval.
         try {
-            const transporter = nodemailer.createTransport({
-                service: "gmail",
-                auth: {
-                    user: process.env.EMAIL,
-                    pass: process.env.E_PASS
-                }
-            });
+            const sendSmtpEmail = new brevo.SendSmtpEmail();
 
-            await transporter.sendMail({
-                from: process.env.EMAIL,
-                to: pendingVendor.email,
-                subject: "Account Approved",
-                html: `
+            sendSmtpEmail.sender = {
+                name: process.env.BREVO_SENDER_NAME || "VS Arogya",
+                email: process.env.BREVO_SENDER_EMAIL
+            };
+
+            sendSmtpEmail.to = [
+                {
+                    email: pendingVendor.email,
+                    name: pendingVendor.contact_person_name
+                }
+            ];
+
+            sendSmtpEmail.subject = "Account Approved";
+
+            sendSmtpEmail.htmlContent = `
+                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
                     <h2>Registration Approved</h2>
-            <p>Hello ${pendingVendor.contact_person_name},</p>
-            <p>Your account has been approved by the admin. your user id is: ${pendingVendor.mobile_no} & passowrd is: ${pendingVendor.password} ,</p>
-            <p>You can now log in to the application.</p>
-          `
-            });
+
+                    <p>Hello ${pendingVendor.contact_person_name},</p>
+
+                    <p>
+                        Your account has been approved by the admin.
+                    </p>
+
+                    <p>
+                        Your user ID is: ${pendingVendor.mobile_no}
+                    </p>
+
+                    <p>
+                        You can now log in to the application.
+                    </p>
+
+                    <p>
+                        Warm Regards,<br>
+                        Team: VS Arogya
+                    </p>
+                </div>
+            `;
+
+            const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
+
+            console.log("Approval email sent via Brevo:", info.messageId);
+
         } catch (mailErr) {
-            console.log("approval mail failed (non-fatal):", mailErr?.message);
+            console.error(
+                "Approval mail failed (non-fatal):",
+                mailErr?.response?.body || mailErr?.message
+            );
         }
 
-        return res.status(200)
-            .json({
-                message: "approval sent success",
-                success: true
-            });
-    }
-    catch (er) {
+        return res.status(200).json({
+            message: "approval sent success",
+            success: true
+        });
+
+    } catch (er) {
         console.log(er);
-        return res.status(500)
-            .json({
-                message: "Internal server error ",
-                success: false
-            });
+
+        return res.status(500).json({
+            message: "Internal server error ",
+            success: false
+        });
     }
-}
+};
+
+
 
 export const rejectApproval = async (req, res) => {
-
     try {
         const vendor_id = req.params.id;
 
         const vendor = await Vendor.findById(vendor_id);
 
-        if (!vendor)
-            return res.status(401)
-                .json({
-                    message: "Vendor not found ",
-                    success: false
-                });
+        if (!vendor) {
+            return res.status(401).json({
+                message: "Vendor not found ",
+                success: false
+            });
+        }
 
         vendor.approvalStatus = "Rejected";
         await vendor.save();
 
-        // Best-effort mail — the rejection is already saved (see statusApproval).
+        // Best-effort email using Brevo API
+        // Rejection is already saved, so email failure is non-fatal.
         try {
-            const transporter = nodemailer.createTransport({
-                service: "gmail",
-                auth: {
-                    user: process.env.EMAIL,
-                    pass: process.env.E_PASS
+            const sendSmtpEmail = new brevo.SendSmtpEmail();
+
+            sendSmtpEmail.sender = {
+                name: process.env.BREVO_SENDER_NAME || "VS Arogya",
+                email: process.env.BREVO_SENDER_EMAIL
+            };
+
+            sendSmtpEmail.to = [
+                {
+                    email: vendor.email,
+                    name: vendor.contact_person_name
                 }
-            });
-            await transporter.sendMail({
-                from: process.env.EMAIL,
-                to: vendor.email,
-                subject: "Account Rejected",
-                html: `
-            <h2>Registration Rejected</h2>
-            <p>Hello ${vendor.contact_person_name},</p>
-            <p>Your account has been rejected by the admin .</p>
-          `
-            });
+            ];
+
+            sendSmtpEmail.subject = "Account Rejected";
+
+            sendSmtpEmail.htmlContent = `
+                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                    <h2>Registration Rejected</h2>
+
+                    <p>Hello ${vendor.contact_person_name},</p>
+
+                    <p>
+                        Your account has been rejected by the admin.
+                    </p>
+
+                    <p>
+                        If you have questions regarding this decision,
+                        please contact our support team.
+                    </p>
+
+                    <p>
+                        Warm Regards,<br>
+                        Team: VS Arogya
+                    </p>
+                </div>
+            `;
+
+            const info = await brevoApi.sendTransacEmail(sendSmtpEmail);
+
+            console.log(
+                "Rejection email sent via Brevo:",
+                info.messageId
+            );
+
         } catch (mailErr) {
-            console.log("rejection mail failed (non-fatal):", mailErr?.message);
+            console.error(
+                "Rejection mail failed (non-fatal):",
+                mailErr?.response?.body || mailErr?.message
+            );
         }
 
-        return res.status(200)
-            .json({
-                message: "Vendor rejected",
-                success: true
-            });
+        return res.status(200).json({
+            message: "Vendor rejected",
+            success: true
+        });
 
     } catch (er) {
         console.log("error from reject Approval ", er);
 
-        return res.status(500)
-            .json({
-                message: "Internal server error ",
-                success: false
-            });
+        return res.status(500).json({
+            message: "Internal server error ",
+            success: false
+        });
     }
-}
+};
+
 export const getAllOrder = async (req, res) => {
 
     try {
