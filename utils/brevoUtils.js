@@ -1,10 +1,6 @@
+import * as brevo from "@getbrevo/brevo";
 
-import { BrevoClient } from "@getbrevo/brevo";
-
-// Created on first send, not at import: a missing BREVO_API_KEY must fail the
-// email call (which every caller already catches), not crash the whole server
-// at boot.
-let brevoClient = null;
+let apiInstance = null;
 
 const getClient = () => {
     const apiKey = process.env.BREVO_API_KEY;
@@ -13,11 +9,16 @@ const getClient = () => {
         throw new Error("BREVO_API_KEY is missing from environment variables");
     }
 
-    if (!brevoClient) {
-        brevoClient = new BrevoClient({ apiKey });
+    // Lazy initialization using Brevo's official TransactionalEmailsApi
+    if (!apiInstance) {
+        apiInstance = new brevo.TransactionalEmailsApi();
+        apiInstance.setApiKey(
+            brevo.TransactionalEmailsApiApiKeys.apiKey,
+            apiKey
+        );
     }
 
-    return brevoClient;
+    return apiInstance;
 };
 
 export const sendBrevoEmail = async ({
@@ -28,25 +29,27 @@ export const sendBrevoEmail = async ({
 }) => {
     const senderEmail = process.env.BREVO_SENDER_EMAIL;
 
-                console.log("brevo called  utils") ;
-
+    console.log("Brevo email called from utils"); // Debugging
 
     if (!senderEmail) {
         throw new Error("BREVO_SENDER_EMAIL is missing from environment variables");
     }
 
-    return await getClient().transactionalEmails.sendTransacEmail({
-        sender: {
-            name: process.env.BREVO_SENDER_NAME || "VS Arogya",
-            email: senderEmail,
+    // Create the email object format expected by Brevo
+    const sendSmtpEmail = new brevo.SendSmtpEmail();
+    sendSmtpEmail.subject = subject;
+    sendSmtpEmail.htmlContent = htmlContent;
+    sendSmtpEmail.sender = {
+        name: process.env.BREVO_SENDER_NAME || "VS Arogya",
+        email: senderEmail,
+    };
+    sendSmtpEmail.to = [
+        {
+            email: to,
+            ...(toName ? { name: toName } : {}),
         },
-        to: [
-            {
-                email: to,
-                ...(toName ? { name: toName } : {}),
-            },
-        ],
-        subject,
-        htmlContent,
-    });
+    ];
+
+    // Send the email
+    return getClient().sendTransacEmail(sendSmtpEmail);
 };
