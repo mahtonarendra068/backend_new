@@ -106,15 +106,33 @@ export const sendOtp = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(
-            "Send OTP Error:",
-            error?.status,
-            error?.response?.text || error?.message
-        );
+        const providerText = error?.response?.text || error?.message || "";
+
+        console.error("Send OTP Error:", error?.status, providerText);
+
+        // The code never reached the inbox, so it must not hold the 30 s
+        // resend cooldown against the next attempt.
+        const failedEmail = normalizeEmail(req.body?.email);
+        if (failedEmail) {
+            await Eotp.deleteMany({ email: failedEmail }).catch(() => {});
+        }
+
+        // Without a reason every mail failure looks the same from outside the
+        // host's logs. None of these reveal anything about the address.
+        let reason = "EMAIL_SEND_FAILED";
+        if (/missing from environment/i.test(providerText)) {
+            reason = "EMAIL_NOT_CONFIGURED";
+        } else if (error?.status === 401 || error?.status === 403) {
+            reason = "EMAIL_PROVIDER_UNAUTHORIZED";
+        } else if (error?.status === 400) {
+            reason = "EMAIL_PROVIDER_BAD_REQUEST";
+        }
 
         return res.status(500).json({
             success: false,
             message: "Unable to send OTP. Please try again.",
+            reason,
+            ...(error?.status ? { providerMessage: String(providerText).slice(0, 300) } : {}),
         });
     }
 };
