@@ -10,7 +10,7 @@ import { generatePDF } from "../utils/generatePdf.js";
 import cloudinary from "../utils/cloudinary.js";
 import order from "../model/orderModel.js";
 import Invoice from "../model/invoiceModel.js";
-import nodemailer from "nodemailer";
+import { sendBrevoEmail } from "../utils/brevoUtils.js";
 import { normalizeFreeQty } from "../utils/freeGoods.js";
 import { buildInvoiceItems, invoiceRow } from "../utils/invoiceItems.js";
 import {
@@ -1406,15 +1406,11 @@ export const registerOutletVendor = async (req, res) => {
 
         // Confirmation email — non-fatal, exactly like the other register flows.
         try {
-            const transporter = nodemailer.createTransport({
-                service: "gmail",
-                auth: { user: process.env.EMAIL, pass: process.env.E_PASS },
-            });
-            await transporter.sendMail({
-                from: process.env.EMAIL,
+            await sendBrevoEmail({
                 to: normalizedEmail,
-                subject: "Vendor Registration",
-                html: `
+                toName: contact_person_name,
+                subject: "Vendor Registration - VS Arogya",
+                htmlContent: `
         <h1>Hi ${contact_person_name}</h1>
         <p>🎉 Your vendor registration has been received at a VS Arogya outlet counter.</p>
         <p>Your application is currently under review.</p>

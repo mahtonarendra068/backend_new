@@ -1,6 +1,5 @@
 import order from "../model/orderModel.js";
 import Vendor from "../model/userModel.js";
-import nodemailer from "nodemailer";
 import generateInvoiceForOrder from "../utils/invoiceGenerator.js";
 import { sendBrevoEmail } from "../utils/brevoUtils.js";
 
@@ -11,9 +10,7 @@ const approvalneedUser = async (req, res) => {
         const pendingUser = await Vendor.find({
 
             approvalStatus: "Pending"
-        });
-
-        console.log(" pending user ", pendingUser);
+        }).select("-password");
 
         // Empty list is not an error — let the admin screen show "no requests".
         return res.status(200)
@@ -72,7 +69,7 @@ export const statusApproval = async (req, res) => {
                         <p style="margin: 0;"><b>Your Login ID / Mobile No:</b> ${pendingVendor.mobile_no}</p>
                     </div>
 
-                    <p>You can now log in to the application and start managing your store.</p>
+                    <p>You can now sign in to the app or website with your email OTP to see prices and start ordering.</p>
                     <br>
                     <p>Warm Regards,<br><b>Team VS Arogya</b></p>
                 </div>
