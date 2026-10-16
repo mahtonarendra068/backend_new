@@ -1,3 +1,4 @@
+import cloudinary from "../utils/cloudinary.js";
 import order from "../model/orderModel.js";
 import Vendor from "../model/userModel.js";
 import generateInvoiceForOrder from "../utils/invoiceGenerator.js";
@@ -535,3 +536,81 @@ export const totalSell = async (req, res) => {
 
 
 
+
+// ---------------------------------------------------------------------------
+// Vendor KYC documents
+//
+// Cloudinary refuses to serve PDFs (and sometimes other files) on a plain
+// public URL unless the account has "Allow delivery of PDF and ZIP files"
+// turned on, so the stored secure_url often answers 401 in the browser. The
+// admin screen therefore asks THIS route, which fetches the file server-side —
+// first from the stored URL, then through a signed Cloudinary API download
+// that ignores the delivery restriction — and streams the bytes back.
+// ---------------------------------------------------------------------------
+const VENDOR_DOC_FIELDS = ["drug_lic_copy", "store_pic", "gst_pdf"];
+
+const MIME_BY_EXT = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+};
+
+export const getVendorDocument = async (req, res) => {
+    try {
+        const { id, field } = req.params;
+
+        if (!VENDOR_DOC_FIELDS.includes(field)) {
+            return res.status(400).json({ success: false, message: "Unknown document." });
+        }
+
+        const vendor = await Vendor.findById(id).select(field);
+        const doc = vendor?.[field];
+
+        if (!doc?.url) {
+            return res.status(404).json({ success: false, message: "This document was not uploaded." });
+        }
+
+        const urlPath = doc.url.split("?")[0];
+        const ext = (urlPath.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+        const resourceType = (urlPath.match(/\/(image|raw|video)\/upload\//)?.[1]) || "image";
+
+        let upstream = await fetch(doc.url);
+
+        if (!upstream.ok && doc.publicId) {
+            const signed = cloudinary.utils.private_download_url(
+                doc.publicId,
+                resourceType === "raw" ? "" : ext || "pdf",
+                { resource_type: resourceType, type: "upload" }
+            );
+            upstream = await fetch(signed);
+        }
+
+        if (!upstream.ok) {
+            console.log("vendor document fetch failed", upstream.status, doc.url);
+            return res.status(502).json({
+                success: false,
+                message: "The document could not be fetched from storage.",
+            });
+        }
+
+        const buffer = Buffer.from(await upstream.arrayBuffer());
+        // Stored URLs carry no extension, so identify the file by its first bytes.
+        const head = buffer.subarray(0, 4).toString("latin1");
+        const sniffed = head.startsWith("%PDF") ? "application/pdf"
+            : buffer[0] === 0xff && buffer[1] === 0xd8 ? "image/jpeg"
+            : head.startsWith("\x89PNG") ? "image/png"
+            : head === "RIFF" ? "image/webp"
+            : null;
+        const contentType = sniffed || MIME_BY_EXT[ext] || upstream.headers.get("content-type") || "application/octet-stream";
+
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Length", buffer.length);
+        res.setHeader("Cache-Control", "private, max-age=300");
+        return res.status(200).send(buffer);
+    } catch (error) {
+        console.log("error from getVendorDocument", error);
+        return res.status(500).json({ success: false, message: "Internal server error " });
+    }
+};
