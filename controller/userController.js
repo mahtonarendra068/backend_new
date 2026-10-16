@@ -146,14 +146,9 @@ export const registerVendor = async (req, res) => {
       htmlContent: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; padding: 20px;">
         <h2>Hi ${contact_person_name},</h2>
-        <p>🎉 Your vendor registration for <b>${store_name}</b> has been successfully received.</p>
+        <p>🎉 Your vendor registration for <b>${store_name}</b> has been successfully done.</p>
         <p>Your application is currently under review.</p>
-        
-        <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <p style="margin: 0;"><b>Your Temporary Login Credentials:</b></p>
-          <p style="margin: 5px 0 0 0;">Email: <b>${email}</b></p>
-          <p style="margin: 5px 0 0 0;">Password: <b style="color: #4F46E5;">${autoPassword}</b></p>
-        </div>
+  
 
         <p>We'll notify you via email once the verification process is complete.</p>
         <p>Thank you for being part of our growing network 🚀🎉</p>
